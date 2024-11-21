@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Three.js Interactive Model with Rainbow and Starry Background</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <link type="text/css" rel="stylesheet" href="main.css">
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="info">
+        <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> interactive model with rainbow effect and enhanced starry background
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        let camera, scene, renderer, raycaster, mouse, model, starGeo, stars, shootingStar;
+        let clock, rainbowHue = 0; // Used for rainbow hue
+        const mixers = [];
+        const originalColor = new THREE.Color(0x6a0dad); // Default bluish-purple color
+
+        init();
+        animate();
+
+        function init() {
+            // Scene setup
+            scene = new THREE.Scene();
+
+            // Camera setup
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.01, 100);
+            camera.position.set(2.5, 1, 3);
+            camera.lookAt(0, 1, 0);
+
+            clock = new THREE.Clock();
+
+            // Lights setup
+            const light = new THREE.PointLight(0xffffff, 1);
+            light.position.set(0, 1, 5);
+            scene.add(new THREE.HemisphereLight(0xff0066, 0x0066ff, 7));
+            scene.add(light);
+
+            // Starry background setup with smaller stars and increased number
+            starGeo = new THREE.BufferGeometry();
+            const starCount = 1500; // Increased number of stars
+            const starVertices = [];
+
+            for (let i = 0; i < starCount; i++) {
+                const x = THREE.MathUtils.randFloatSpread(100);
+                const y = THREE.MathUtils.randFloatSpread(100);
+                const z = THREE.MathUtils.randFloatSpread(100);
+                starVertices.push(x, y, z);
+            }
+
+            starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+
+            const starMaterial = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: 0.3, // Reduced star size
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                sizeAttenuation: true
+            });
+
+            stars = new THREE.Points(starGeo, starMaterial);
+            scene.add(stars);
+
+            // Shooting star setup
+            const shootingStarGeo = new THREE.SphereGeometry(0.1, 16, 16);
+            const shootingStarMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+            shootingStar = new THREE.Mesh(shootingStarGeo, shootingStarMaterial);
+            scene.add(shootingStar);
+
+            // Raycaster and mouse setup
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            // Model loading
+            const loader = new GLTFLoader();
+            loader.load('./models/Xbot.glb', function (gltf) {
+                model = gltf.scene;
+
+                model.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material.color.set(originalColor); // Default color is bluish-purple
+                        child.userData.originalColor = originalColor.clone();
+                    }
+                });
+
+                const mixer = new THREE.AnimationMixer(model);
+                const action = mixer.clipAction(gltf.animations[6]);
+                action.play();
+
+                mixers.push(mixer);
+                scene.add(model);
+
+            }, undefined, function (error) {
+                console.error("An error occurred while loading the model: ", error);
+            });
+
+            // Renderer setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            const controls = new OrbitControls(camera, renderer.domElement);
+            controls.target.set(0, 1, 0);
+            controls.update();
+
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('mousemove', onMouseMove);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onMouseMove(event) {
+            // Update mouse coordinates
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            // Update the raycaster
+            raycaster.setFromCamera(mouse, camera);
+
+            // Check for intersects with the model
+            if (model) {
+                const intersects = raycaster.intersectObject(model, true);
+
+                // Change the color of intersected parts and reset color for others
+                model.traverse((child) => {
+                    if (child.isMesh) {
+                        if (intersects.find((i) => i.object === child)) {
+                            // If intersected, change to rainbow color
+                            rainbowHue = (rainbowHue + 1) % 360; // Increment hue to loop between 0-360 degrees
+                            const rainbowColor = new THREE.Color(`hsl(${rainbowHue}, 100%, 50%)`);
+                            child.material.color.set(rainbowColor);
+                        } else {
+                            // Reset color if not intersected
+                            child.material.color.set(child.userData.originalColor);
+                        }
+                    }
+                });
+            }
+        }
+
+        function animate() {
+            const delta = clock.getDelta();
+
+            // Update the mixers for animation
+            for (const mixer of mixers) {
+                mixer.update(delta);
+            }
+
+            // Animate stars for a twinkling effect
+            stars.rotation.y += 0.001;
+
+            // Shooting star animation
+            shootingStar.position.x -= 0.2;
+            shootingStar.position.y -= 0.05;
+
+            // Reset the shooting star position when it goes out of view
+            if (shootingStar.position.x < -50 || shootingStar.position.y < -50) {
+                shootingStar.position.set(THREE.MathUtils.randFloat(20, 50), THREE.MathUtils.randFloat(10, 30), THREE.MathUtils.randFloatSpread(100));
+            }
+
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);
+        }
+    </script>
+</body>
+</html>
+
